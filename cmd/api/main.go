@@ -2,17 +2,28 @@ package main
 
 import (
 	"fmt"
-	"taskflow/internal/task"
-	"time"
+	"log"
+
+	"taskflow/internal/repository"
+	"taskflow/internal/service"
 )
 
 func main() {
-	newTask := &task.Task{
-		ID:        1,
-		Title:     "Learn go backend development",
-		Completed: false,
-		CreatedAt: time.Now(),
+	store := repository.NewMemory()
+
+	taskService := service.NewTaskService(store)
+
+	firstTask, err := taskService.CreateTask("Learn Go interfaces")
+	if err != nil {
+		log.Fatal(err)
 	}
 
-	fmt.Printf("%+v\n", *newTask)
+	fmt.Printf("Created: %+v\n", firstTask)
+
+	secondTask, err := taskService.CreateTask("   ")
+	if err != nil {
+		fmt.Printf("Expected validation error: %v\n", err)
+	}
+
+	_ = secondTask
 }
