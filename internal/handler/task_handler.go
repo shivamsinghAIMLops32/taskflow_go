@@ -3,13 +3,13 @@ package handler
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"strconv"
-	"strings"
 
 	"taskflow/internal/repository"
 	"taskflow/internal/service"
-	"taskflow/internal/task"
 )
 
 type TaskHandler struct {
@@ -27,19 +27,51 @@ func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
 		Title string `json:"title"`
 	}
 
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		http.Error(w, "Invalid JSON body", http.StatusBadRequest)
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+
+	if err := decoder.Decode(&input); err != nil {
+		writeError(
+			w,
+			http.StatusBadRequest,
+			"INVALID_JSON",
+			"Request body must contain valid task JSON",
+		)
 		return
 	}
 
-	createdTask, err := h.service.CreateTask(input.Title)
+	// Reject a second JSON value or other trailing data.
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		writeError(
+			w,
+			http.StatusBadRequest,
+			"INVALID_JSON",
+			"Request body must contain exactly one JSON object",
+		)
+		return
+	}
+
+createdTask, err := h.service.CreateTask(
+	r.Context(),
+	input.Title,
+)
 	if err != nil {
 		if errors.Is(err, service.ErrEmptyTitle) {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			writeError(
+				w,
+				http.StatusBadRequest,
+				"VALIDATION_ERROR",
+				err.Error(),
+			)
 			return
 		}
 
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		writeError(
+			w,
+			http.StatusInternalServerError,
+			"INTERNAL_ERROR",
+			"An unexpected error occurred",
+		)
 		return
 	}
 
@@ -47,25 +79,53 @@ func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *TaskHandler) GetTasks(w http.ResponseWriter, r *http.Request) {
-	tasks := h.service.GetAllTasks()
-	writeJSON(w, http.StatusOK, tasks)
+tasks, err := h.service.GetAllTasks(r.Context())
+if err != nil {
+	writeError(
+		w,
+		http.StatusInternalServerError,
+		"INTERNAL_ERROR",
+		"An unexpected error occurred",
+	)
+	return
+}
+
+writeJSON(w, http.StatusOK, tasks)
 }
 
 func (h *TaskHandler) GetTask(w http.ResponseWriter, r *http.Request) {
 	id, err := parseTaskID(r)
 	if err != nil {
-		http.Error(w, "Invalid task ID", http.StatusBadRequest)
+		writeError(
+			w,
+			http.StatusBadRequest,
+			"INVALID_TASK_ID",
+			"Task ID must be a positive integer",
+		)
 		return
 	}
 
-	foundTask, err := h.service.GetTask(id)
+	foundTask, err := h.service.GetTask(
+	r.Context(),
+	id,
+)
 	if err != nil {
 		if errors.Is(err, repository.ErrTaskNotFound) {
-			http.Error(w, "Task not found", http.StatusNotFound)
+			writeError(
+				w,
+				http.StatusNotFound,
+				"TASK_NOT_FOUND",
+				"Task does not exist",
+			)
 			return
 		}
 
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		writeError(
+			w,
+			http.StatusInternalServerError,
+			"INTERNAL_ERROR",
+			"An unexpected error occurred",
+		)
 		return
 	}
 
@@ -75,18 +135,32 @@ func (h *TaskHandler) GetTask(w http.ResponseWriter, r *http.Request) {
 func (h *TaskHandler) DeleteTask(w http.ResponseWriter, r *http.Request) {
 	id, err := parseTaskID(r)
 	if err != nil {
-		http.Error(w, "Invalid task ID", http.StatusBadRequest)
+		writeError(
+			w,
+			http.StatusBadRequest,
+			"INVALID_TASK_ID",
+			"Task ID must be a positive integer",
+		)
 		return
 	}
 
-	err = h.service.DeleteTask(id)
-	if err != nil {
+	if err := h.service.DeleteTask(r.Context(),id); err != nil {
 		if errors.Is(err, repository.ErrTaskNotFound) {
-			http.Error(w, "Task not found", http.StatusNotFound)
+			writeError(
+				w,
+				http.StatusNotFound,
+				"TASK_NOT_FOUND",
+				"Task does not exist",
+			)
 			return
 		}
 
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		writeError(
+			w,
+			http.StatusInternalServerError,
+			"INTERNAL_ERROR",
+			"An unexpected error occurred",
+		)
 		return
 	}
 
@@ -94,26 +168,12 @@ func (h *TaskHandler) DeleteTask(w http.ResponseWriter, r *http.Request) {
 }
 
 func parseTaskID(r *http.Request) (int64, error) {
-	rawID := strings.TrimPrefix(r.URL.Path, "/tasks/")
+	rawID := r.PathValue("id")
 
 	id, err := strconv.ParseInt(rawID, 10, 64)
 	if err != nil || id <= 0 {
-		return 0, errors.New("invalid task ID")
+		return 0, fmt.Errorf("invalid task ID")
 	}
 
 	return id, nil
 }
-
-func writeJSON(w http.ResponseWriter, status int, value any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-
-	if err := json.NewEncoder(w).Encode(value); err != nil {
-		// The status has already been written, so we cannot safely
-		// replace the response with another HTTP error here.
-		return
-	}
-}
-
-// Compile-time check that task is still imported and usable as our API model.
-var _ = task.Task{}

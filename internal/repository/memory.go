@@ -1,10 +1,12 @@
 package repository
 
 import (
+	"context"
 	"errors"
 	"sync"
-	"taskflow/internal/task"
 	"time"
+
+	"taskflow/internal/task"
 )
 
 var ErrTaskNotFound = errors.New("task not found")
@@ -22,24 +24,49 @@ func NewMemory() *Memory {
 	}
 }
 
-func (m *Memory) Create(title string) task.Task {
+func (m *Memory) Create(
+	ctx context.Context,
+	title string,
+) (task.Task, error) {
+	if err := ctx.Err(); err != nil {
+		return task.Task{}, err
+	}
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
+	// Check again after acquiring the lock.
+	if err := ctx.Err(); err != nil {
+		return task.Task{}, err
+	}
+
 	newTask := task.Task{
 		ID:        m.nextID,
 		Title:     title,
 		Completed: false,
 		CreatedAt: time.Now().UTC(),
 	}
+
 	m.tasks[newTask.ID] = newTask
 	m.nextID++
 
-	return newTask
+	return newTask, nil
 }
 
-func (m *Memory) GetByID(id int64) (task.Task, error) {
+func (m *Memory) GetByID(
+	ctx context.Context,
+	id int64,
+) (task.Task, error) {
+	if err := ctx.Err(); err != nil {
+		return task.Task{}, err
+	}
+
 	m.mu.RLock()
 	defer m.mu.RUnlock()
+
+	if err := ctx.Err(); err != nil {
+		return task.Task{}, err
+	}
 
 	foundTask, exists := m.tasks[id]
 	if !exists {
@@ -48,9 +75,20 @@ func (m *Memory) GetByID(id int64) (task.Task, error) {
 
 	return foundTask, nil
 }
-func (m *Memory) GetAll() []task.Task {
+
+func (m *Memory) GetAll(
+	ctx context.Context,
+) ([]task.Task, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	m.mu.RLock()
 	defer m.mu.RUnlock()
+
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 
 	tasks := make([]task.Task, 0, len(m.tasks))
 
@@ -58,12 +96,23 @@ func (m *Memory) GetAll() []task.Task {
 		tasks = append(tasks, t)
 	}
 
-	return tasks
+	return tasks, nil
 }
 
-func (m *Memory) Delete(id int64) error {
+func (m *Memory) Delete(
+	ctx context.Context,
+	id int64,
+) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 
 	if _, exists := m.tasks[id]; !exists {
 		return ErrTaskNotFound
@@ -73,3 +122,5 @@ func (m *Memory) Delete(id int64) error {
 
 	return nil
 }
+
+var _ TaskRepository = (*Memory)(nil)

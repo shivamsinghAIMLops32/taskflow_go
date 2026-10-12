@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"strings"
 
@@ -9,6 +10,7 @@ import (
 )
 
 var ErrEmptyTitle = errors.New("task title cannot be empty")
+var ErrInvalidTaskID = errors.New("task ID must be positive")
 
 type TaskService struct {
 	repo repository.TaskRepository
@@ -20,34 +22,47 @@ func NewTaskService(repo repository.TaskRepository) *TaskService {
 	}
 }
 
-func (s *TaskService) CreateTask(title string) (task.Task, error) {
+func (s *TaskService) CreateTask(
+	ctx context.Context,
+	title string,
+) (task.Task, error) {
+	if err := ctx.Err(); err != nil {
+		return task.Task{}, err
+	}
+
 	title = strings.TrimSpace(title)
 
 	if title == "" {
 		return task.Task{}, ErrEmptyTitle
 	}
 
-	createdTask := s.repo.Create(title)
-
-	return createdTask, nil
+	return s.repo.Create(ctx, title)
 }
 
-func (s *TaskService) GetTask(id int64) (task.Task, error) {
+func (s *TaskService) GetTask(
+	ctx context.Context,
+	id int64,
+) (task.Task, error) {
 	if id <= 0 {
-		return task.Task{}, errors.New("task ID must be positive")
+		return task.Task{}, ErrInvalidTaskID
 	}
 
-	return s.repo.GetByID(id)
+	return s.repo.GetByID(ctx, id)
 }
 
-func (s *TaskService) GetAllTasks() []task.Task {
-	return s.repo.GetAll()
+func (s *TaskService) GetAllTasks(
+	ctx context.Context,
+) ([]task.Task, error) {
+	return s.repo.GetAll(ctx)
 }
 
-func (s *TaskService) DeleteTask(id int64) error {
+func (s *TaskService) DeleteTask(
+	ctx context.Context,
+	id int64,
+) error {
 	if id <= 0 {
-		return errors.New("task ID must be positive")
+		return ErrInvalidTaskID
 	}
 
-	return s.repo.Delete(id)
+	return s.repo.Delete(ctx, id)
 }
