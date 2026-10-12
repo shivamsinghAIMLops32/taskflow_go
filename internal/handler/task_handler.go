@@ -29,15 +29,24 @@ func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
 
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
+if err := decoder.Decode(&input); err != nil {
+	writeRequestDecodeError(w, err)
+	return
+}
 
-	if err := decoder.Decode(&input); err != nil {
+if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+	if err != nil {
+		writeRequestDecodeError(w, err)
+	} else {
 		writeError(
 			w,
 			http.StatusBadRequest,
 			"INVALID_JSON",
-			"Request body must contain valid task JSON",
+			"Request body must contain exactly one JSON object",
 		)
-		return
+	}
+
+	return
 	}
 
 	// Reject a second JSON value or other trailing data.
@@ -176,4 +185,27 @@ func parseTaskID(r *http.Request) (int64, error) {
 	}
 
 	return id, nil
+}
+
+
+
+func writeRequestDecodeError(w http.ResponseWriter, err error) {
+	var maxBytesErr *http.MaxBytesError
+
+	if errors.As(err, &maxBytesErr) {
+		writeError(
+			w,
+			http.StatusRequestEntityTooLarge,
+			"REQUEST_TOO_LARGE",
+			"Request body must not exceed 1 MiB",
+		)
+		return
+	}
+
+	writeError(
+		w,
+		http.StatusBadRequest,
+		"INVALID_JSON",
+		"Request body must contain valid task JSON",
+	)
 }

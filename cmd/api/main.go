@@ -27,11 +27,15 @@ func main() {
 	mux.HandleFunc("GET /tasks/{id}", taskHandler.GetTask)
 	mux.HandleFunc("DELETE /tasks/{id}", taskHandler.DeleteTask)
 
-	server := &http.Server{
-		Addr:              ":8080",
-		Handler:           mux,
-		ReadHeaderTimeout: 5 * time.Second,
-	}
+	app := handler.RequestLogger(
+	handler.MaxBodySize(1 << 20)(mux),
+)
+
+server := &http.Server{
+	Addr:              ":8080",
+	Handler:           app,
+	ReadHeaderTimeout: 5 * time.Second,
+}
 
 	// Listen for Ctrl+C or a termination signal.
 	signalCtx, stop := signal.NotifyContext(
