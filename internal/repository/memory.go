@@ -1,32 +1,31 @@
 package repository
 
 import (
+	"errors"
 	"sync"
 	"taskflow/internal/task"
 	"time"
-	"errors"
 )
 
 var ErrTaskNotFound = errors.New("task not found")
 
 type Memory struct {
-	mu sync.RWMutex
-	tasks map[int64]task.Task
+	mu     sync.RWMutex
+	tasks  map[int64]task.Task
 	nextID int64
 }
 
-
-func NewMemory() *Memory{
- return &Memory{
-	  tasks: make(map[int64]task.Task),
-	  nextID: 1,
- }
+func NewMemory() *Memory {
+	return &Memory{
+		tasks:  make(map[int64]task.Task),
+		nextID: 1,
+	}
 }
 
-func (m *Memory) Create(title string) task.Task{
- m.mu.Lock()
- defer m.mu.Unlock()
- 	newTask := task.Task{
+func (m *Memory) Create(title string) task.Task {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	newTask := task.Task{
 		ID:        m.nextID,
 		Title:     title,
 		Completed: false,
